@@ -1,0 +1,133 @@
+---
+title: "PredictionAssignment"
+author: "send2kavr"
+date: "July 21, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary 
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+
+Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+## Purpose
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+
+## Data Set Up
+A) Load the required packages
+B) Load the data
+C) Clean up the data
+
+
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(rattle)
+library(e1071)
+set.seed(1)
+```
+## Downloading the Data
+```{r}
+
+train_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train.file <- file.path(getwd(), "machine-train-data.csv")
+test.file <- file.path(getwd(), "machine-test-data.csv")
+if (!file.exists(train.file)) {
+        download.file(train_url, destfile=train.file)
+}
+if (!file.exists(test.file)) {
+        download.file(test_url, destfile=test.file)
+}
+
+train.data.raw <- read.csv(train.file, na.strings=c("NA","#DIV/0!",""))
+test.data.raw <- read.csv(test.file, na.strings=c("NA","#DIV/0!",""))
+```
+## Data Clean Up
+
+```{r}
+# Drop the first 7 columns as they're unnecessary for predicting.
+train.data.clean1 <- train.data.raw[,8:length(colnames(train.data.raw))]
+test.data.clean1 <- test.data.raw[,8:length(colnames(test.data.raw))]
+
+# Drop colums with NAs
+train.data.clean1 <- train.data.clean1[, colSums(is.na(train.data.clean1)) == 0] 
+test.data.clean1 <- test.data.clean1[, colSums(is.na(test.data.clean1)) == 0] 
+
+# Check for near zero variance predictors and drop them if necessary
+nzv <- nearZeroVar(train.data.clean1,saveMetrics=TRUE)
+zero.var.ind <- sum(nzv$nzv)
+
+if ((zero.var.ind>0)) {
+        train.data.clean1 <- train.data.clean1[,nzv$nzv==FALSE]
+}
+```
+## Cross Validation
+
+```{r}
+in.training <- createDataPartition(train.data.clean1$classe, p=0.70, list=F)
+train.data.final <- train.data.clean1[in.training, ]
+validate.data.final <- train.data.clean1[-in.training, ]
+```
+## Build the Model
+
+To build the model using the training data set, we are fitting it into a Random Forest Model. The main is to reduce the variance by averaging mutliple decision trees, trained on the different parts of the same data chunk. The cross validation method measures or generalized the analysis.
+
+```{r}
+control.parms <- trainControl(method="cv", 5)
+rf.model <- train(classe ~ ., data=train.data.final, method="rf",
+                 trControl=control.parms, ntree=50)
+rf.model
+```
+
+## Performance Estimate
+The model fit using the training data is tested against the validation data. Predicted values for the validation data are then compared to the actual values. This allows forecasting the accuracy and overall out-of-sample error, which indicate how well the model will perform with other data.
+
+```{r}
+rf.predict <- predict(rf.model, validate.data.final)
+confusionMatrix(validate.data.final$classe, rf.predict)
+```
+```{r}
+accuracy <- postResample(rf.predict, validate.data.final$classe)
+acc.out <- accuracy[1]
+
+overall.ose <- 
+        1 - as.numeric(confusionMatrix(validate.data.final$classe, rf.predict)
+                       $overall[1])
+overall.ose
+accuracy
+
+```
+## The accuracy of the model is 0.9920136 and the out of sample error is 0.007986406
+
+## run the model
+```{r}
+results <- predict(rf.model, 
+                   test.data.clean1[, -length(names(test.data.clean1))])
+results
+```
+## Visual Decision Tree
+```{r}
+treeModel <- rpart(classe ~ ., data=train.data.final, method="class")
+fancyRpartPlot(treeModel)
+```
